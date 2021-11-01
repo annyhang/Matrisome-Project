@@ -5,13 +5,336 @@ output: html_notebook
 
 
 
+### Libraries used
 ```{r}
-plot(cars)
+#General Bioconductor packages
+library(Biobase)
+library(oligoClasses)
+
+#Annotation and data import packages
+library(ArrayExpress)
+library(pd.hg.u133.plus.2) 
+library(biomaRt)
+
+#Quality control and pre-processing packages
+library(oligo)
+library(arrayQualityMetrics)
+
+#Analysis and statistics packages
+library(limma)
+library(topGO)
+library(ReactomePA)
+library(clusterProfiler)
+
+#Plotting and color options packages
+library(gplots)
+library(ggplot2)
+library(geneplotter)
+library(RColorBrewer)
+library(pheatmap)
+library(EnhancedVolcano)
+
+#Formatting/documentation packages
+library(dplyr)
+library(tidyr)
+
+#Helpers:
+library(stringr)
+library(matrixStats)
+library(genefilter)
+library(openxlsx)
+library(readxl, writexl)
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+# Data Preparation
+In order to follow the pipeline for the analysis, the genomic data must be formatted to fit into an ExpressionSet from Bioconductor.
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+```{r}
+wdir <- dirname(rstudioapi::getSourceEditorContext()$path)
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+### Load adipose tissue gene
+adipose_tissue_gene <- read_excel(paste(wdir, "/Datasets/MZtwins_whole genome_adipocyte_adipose tissue.xlsx", sep=""), 
+                                  sheet = "Adipose Tissue", skip = 4, col_names = FALSE) # range = "A5:B19616"
 
+## Supplemental data (sex, BMI, etc)
+
+# Get data
+adipose_tissue_supplementalData_lean <- read_excel(paste(wdir, "Supplementary Table 1_Twin characteristics_adipocity_July 15_2020.xlsx"), 
+                                                   sheet = "22 Twins", range = "C4:F25", 
+                                                   col_names = FALSE)
+adipose_tissue_supplementalData_heavy <- read_excel(paste(wdir, "Supplementary Table 1_Twin characteristics_adipocity_July 15_2020.xlsx"), 
+                                                    sheet = "22 Twins", range = "C32:F53", 
+                                                    col_names = FALSE)
+
+# Family ID (based on the excel file)
+fid2 <- paste0('fam', c(1195442,104316,120093,119324,114233,115573,105236,108473,100376,108404,101562,118151,
+                        117383,104249,100988,114192,1141212,112434,121889,1120743,117183,101388,
+                        1195442,104316,120093,119324,114233,115573,105236,108473,100376,108404,101562,118151,
+                        117383,104249,100988,114192,1141212,112434,121889,1120743,117183,101388))
+fid2 <- as.factor(fid2)
+
+# Individual ID
+pid2 <- paste0('ind', c(1392092,108649,140311,138766,128546,131235,110496,117003,100752,116864,103126,136411,
+                        134865,108515,101973,128463,1283222,124938,143929,1242223,134466,102778,
+                        1392102,108648,140312,138767,128545,131236,110495,117004,100753,116863,103125,136412,
+                        134866,108514,101974,128464,1283232,124939,143930,1242233,134465,102777))
+pid2 <- as.factor(pid2)
+
+# Create the supplemental data
+adipose_tissue_supplementalData <- data.frame(fid2, pid2, rbind(adipose_tissue_supplementalData_lean, adipose_tissue_supplementalData_heavy))
+
+supplemental_header <- c("sex", "height", "weight", "bmi")
+colnames(adipose_tissue_supplementalData) <- c("fid", "pid", supplemental_header)
+
+adipose_tissue_supplementalData$sex[adipose_tissue_supplementalData$sex == 1] <- "male"
+adipose_tissue_supplementalData$sex[adipose_tissue_supplementalData$sex == 2] <- "female"
+
+add_three_fid <- paste0('fam', c(105657, 108951, 105089))
+add_three_fid <- rep(add_three_fid, 2)
+add_three_pid <- paste0('ind', c(111341, 117959, 110202, 111342, 117960, 110201))
+add_three_supplementalData <- c("male", NA, NA, NA)
+add_three_supplementalData <- do.call("rbind", replicate(6, add_three_supplementalData, simplify = FALSE))
+
+adipose_tissue_supplementalData_three <- data.frame(add_three_fid, add_three_pid, add_three_supplementalData)
+colnames(adipose_tissue_supplementalData_three) <- c("fid", "pid", supplemental_header)
+
+adipose_tissue_supplementalData <- data.frame(rbind(adipose_tissue_supplementalData_three, adipose_tissue_supplementalData))
+adipose_tissue_supplementalData <- adipose_tissue_supplementalData[with(adipose_tissue_supplementalData, order(fid, pid)),]
+
+## Phenotype data
+
+# Family ID
+fid = paste0('fam', c(1120743,117183,1141212,105657,100988,108951,114192,104249,101388,117383,112434,105089,
+                      121889,101562,108473,119324,1195442,120093,104316,115573,114233,105236,108404,100376,118151,
+                      1120743,117183,1141212,105657,100988,108951,114192,104249,101388,117383,112434,105089,
+                      121889,101562,108473,119324,1195442,120093,104316,115573,114233,105236,108404,100376,118151))
+fid = as.factor(fid)
+
+# Individual ID
+pid = paste0('ind', c(1242223,134466,1283222,111341,101973,117959,128463,108515,102778,134865,124938,110202,143929,
+                      103126,117003,138766,1392092,140311,108649,131235,128546,110496,116864,100752,136411,1242233,
+                      134465,1283232,111342,101974,117960,128464,108514,102777,134866,124939,110201,143930,103125,117004,
+                      138767,1392102,140312,108648,131236,128545,110495,116863,100753,136412))
+pid = as.factor(pid)
+
+# Group (lean and heavy)
+group = as.factor(rep(c('lean','heavy'), each=length(pid)/2))
+
+# Create phenotype data (includes supplemental data, some families removed due to missing suppl data)
+adipose_tissue_phenoData = data.frame(fid, pid, group)
+
+# adipose_tissue_phenoData <- adipose_tissue_phenoData[c(-4,-6,-12,-29,-31,-37),]
+adipose_tissue_phenoData <- adipose_tissue_phenoData[with(adipose_tissue_phenoData, order(fid, pid)),]
+adipose_tissue_phenoData <- data.frame(adipose_tissue_phenoData, adipose_tissue_supplementalData[,c(-1,-2)])
+adipose_tissue_phenoData <- adipose_tissue_phenoData[with(adipose_tissue_phenoData, order(as.numeric(rownames(adipose_tissue_phenoData)))),]
+
+write.csv(adipose_tissue_phenoData, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_phenoData_suppl.csv", 
+          row.names = FALSE)
+
+## Assay data
+
+# Create assay data (some rows removed due to missing supplemental data)
+# adipose_tissue_assayData = as.data.frame(adipose_tissue_gene[, -c(1,2,6,8,14,31,33,39)])
+adipose_tissue_assayData = as.data.frame(adipose_tissue_gene[, -c(1, 2)])
+
+rownames(adipose_tissue_assayData) = make.names(adipose_tissue_gene[[1]], unique=TRUE)
+colnames(adipose_tissue_assayData) =  paste(adipose_tissue_phenoData$fid, adipose_tissue_phenoData$pid, sep=".")
+
+
+write.csv(adipose_tissue_assayData, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_assayData_suppl.csv", row.names = TRUE)
+
+
+### Try to get the annotation data
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset="hsapiens_gene_ensembl") 
+annotations <- getBM(
+  attributes=c(
+    'hgnc_symbol',
+    "ensembl_gene_id",
+    'description',
+    "external_gene_name",
+    'gene_biotype',
+    'chromosome_name',
+    "affy_hg_u133_plus_2"
+  ),
+  filters = 'hgnc_symbol', values = rownames(adipose_tissue_assayData), mart = mart, uniqueRows=TRUE)
+
+
+annotations <- annotations[match(rownames(adipose_tissue_assayData), annotations$hgnc_symbol), ]
+
+
+### Get the additional information for each individual
+
+
+adipose_tissue_featureData = data.frame(geneId = as.factor(adipose_tissue_gene[[1]]), 
+                                        geneDesc = as.factor(adipose_tissue_gene[[2]]))
+
+write.csv(annotations, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_featureData.csv", row.names = FALSE)
+
+```
+
+```{r}
+assayData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_assayData.csv', row.names=1)
+assayData <- as.matrix(assayData)
+
+adipose_tissue_phenoData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_phenoData.csv')
+rownames(adipose_tissue_phenoData) = colnames(assayData)
+
+metadata <- data.frame(labelDescription=
+                         c("Family Id",
+                           "Individual Id",
+                           "Case/control status"),
+                       row.names=c("fid", "pid", "group"))
+
+phenoData <- new("AnnotatedDataFrame", data=adipose_tissue_phenoData, varMetadata=metadata)
+adipose_tissue_featureData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_featureData.csv')
+rownames(adipose_tissue_featureData) = rownames(assayData)
+featureData <- new("AnnotatedDataFrame", data=adipose_tissue_featureData)
+
+raw_data  <- new("ExpressionSet", exprs = assayData, phenoData = phenoData,
+                 featureData = featureData,
+                 annotation="pd.hg.u133.plus.2")
+```
+
+# Data Preprocessing
+The data was normalized and filtered.
+```{r}
+### Normalize (RMA) the dataset with probe intensities via a boxplot graph -----
+#png("~/Desktop/AT/Boxplot of normalization.png", width = 900, height = 500)
+par(mfrow=c(1,2))
+
+oligo::boxplot(raw_data, target = "core", 
+               main = "AT: Boxplot of log2-intensitites for the raw data")
+
+palmieri_eset_norm <- oligo::normalize(raw_data)
+
+oligo::boxplot(palmieri_eset_norm, target = "core", 
+               main = "AT: Boxplot of log2-intensitites for the normalized data")
+#dev.off()
+
+par(mfrow=c(1,1))
+
+### ----------------------------------------------------------------------------
+
+### Filter data with threshold of value 3 --------------------------------------
+# png("~/Desktop/AT/Histogram of filtered data.png", width = 900, height = 500)
+par(mfrow=c(2,1))
+
+palmieri_medians <- rowMedians(Biobase::exprs(palmieri_eset_norm))
+
+man_threshold <- 3 ### user threshold
+
+hist_res <- hist(palmieri_medians, 100, col = "cornsilk", freq = FALSE, 
+                 main = "AT: Histogram of the median intensities of unfiltered expression data",
+                 border = "antiquewhite4",
+                 xlab = "Median intensities")
+
+abline(v = man_threshold, col = "coral4", lwd = 2)
+
+# Transcripts that do not have intensities larger than the threshold in at least as many arrays as the smallest experimental group are excluded.
+no_of_samples <- table( pData(palmieri_eset_norm)$group)
+no_of_samples 
+
+# We now filter out all transcripts that do not have intensities greater than the threshold in at least as many arrays as the smallest experimental group
+samples_cutoff <- min(no_of_samples)
+
+idx_man_threshold <- apply(Biobase::exprs(palmieri_eset_norm), 1,
+                           function(x){
+                             sum(x > man_threshold) >= samples_cutoff})
+table(idx_man_threshold)
+palmieri_manfiltered <- subset(palmieri_eset_norm, idx_man_threshold)
+
+hist(rowMedians(Biobase::exprs(palmieri_manfiltered)), 100, col = "cornsilk", freq = FALSE, 
+     main = "AT: Histogram of the median intensities of filtered expression data",
+     border = "antiquewhite4",
+     xlab = "Median intensities")
+
+par(mfrow=c(1,1))
+# dev.off()
+
+### ----------------------------------------------------------------------------
+
+```
+
+# Hypothesis Testing
+Regression analysis was performed, and hypothesis testing followed.
+```{r}
+### Design matrix --------------------------------------------------------------
+fam <- as.character(Biobase::pData(palmieri_manfiltered)$fid)
+group <- Biobase::pData(palmieri_manfiltered)$group
+
+design_palmieri <- model.matrix(~ 0 + group + fam)
+rownames(design_palmieri) <- Biobase::pData(palmieri_manfiltered)$pid 
+
+### ----------------------------------------------------------------------------
+
+### Contrast matrix ------------------------------------------------------------
+contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design_palmieri)
+
+### ----------------------------------------------------------------------------
+
+### Removing heteroscedasticity --------------------------------------------------
+# png("~/Desktop/AT/Mean-variance trends from removing heteroscedasticity.png", width = 900, height = 500)
+par(mfrow=c(1,2))
+
+v <- voom(palmieri_manfiltered, design_palmieri, plot=TRUE)
+
+vfit <- lmFit(v, design_palmieri)
+vfit <- contrasts.fit(vfit, contrasts=contrast_matrix)
+efit <- eBayes(vfit)
+plotSA(efit, main="AT: Final model: Mean-variance trend")
+# dev.off()
+
+par(mfrow=c(1,1))
+### ----------------------------------------------------------------------------
+
+### Extracting results ---------------------------------------------------------
+table_adipose <- topTable(efit, number = Inf, sort.by = "p")
+head(table_adipose)
+
+summary(decideTests(efit))
+dt <- decideTests(efit)
+
+# write.csv(dt, file = "~/AT_decideTest.csv", row.names = TRUE)
+# write.csv(table_adipose, file = "~/AT_table_adipose.csv", row.names = TRUE)
+
+# png("~/Desktop/AT/Histogram of P-values.png")
+hist(table_adipose$P.Value, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
+# dev.off()
+### ----------------------------------------------------------------------------
+
+### Exporting the results (downregulated and upregulated) ----------------------
+dt_genes <- rownames(decideTests(efit)@.Data)
+
+upregulated_genes <- which(dt > 0)
+upregulated_genes <- dt_genes[upregulated_genes]
+upregulated_table <- which(rownames(table_adipose) %in% upregulated_genes)
+upregulated_table <- table_adipose[upregulated_table,]
+# write.csv(upregulated_table, file = "~/Desktop/MiCM/affy_pipeline/Data/AT/AT_upregulatedData.csv", row.names = FALSE)
+
+downregulated_genes <- which(dt < 0)
+downregulated_genes <- dt_genes[downregulated_genes]
+downregulated_table <- which(rownames(table_adipose) %in% downregulated_genes)
+downregulated_table <- table_adipose[downregulated_table,]
+# write.csv(downregulated_table, file = "~/Desktop/MiCM/affy_pipeline/Data/AT/AT_downregulatedData.csv", row.names = FALSE)
+### ----------------------------------------------------------------------------
+
+### Find P-values --------------------------------------------------------------
+signif_genes <- rownames(as.matrix(dt[dt != 0,]))
+signif_toptable <- table_adipose[rownames(table_adipose) %in% signif_genes,]
+
+## P-value
+pval_min <- min(table_adipose$P.Value)
+pval_max <- max(table_adipose$P.Value)
+
+pval_cutoff <- max(signif_toptable$P.Value)
+
+## Adjusted P-value
+adjPval_min <- min(table_adipose$adj.P.Val)
+adjPval_max <- max(table_adipose$adj.P.Val)
+
+adjPval_cutoff <- max(signif_toptable$adj.P.Val)
+### ----------------------------------------------------------------------------
+
+```
+
+# 
