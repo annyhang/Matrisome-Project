@@ -31,8 +31,6 @@ library(gplots)
 library(ggplot2)
 library(geneplotter)
 library(RColorBrewer)
-library(pheatmap)
-library(EnhancedVolcano)
 
 #Formatting/documentation packages
 library(dplyr)
@@ -47,6 +45,7 @@ library(readxl, writexl)
 ```
 
 # Data Preparation
+
 In order to follow the pipeline for the analysis, the genomic data must be formatted to fit into an ExpressionSet from Bioconductor.
 
 ```{r}
@@ -128,7 +127,7 @@ adipose_tissue_phenoData <- adipose_tissue_phenoData[with(adipose_tissue_phenoDa
 adipose_tissue_phenoData <- data.frame(adipose_tissue_phenoData, adipose_tissue_supplementalData[,c(-1,-2)])
 adipose_tissue_phenoData <- adipose_tissue_phenoData[with(adipose_tissue_phenoData, order(as.numeric(rownames(adipose_tissue_phenoData)))),]
 
-write.csv(adipose_tissue_phenoData, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_phenoData_suppl.csv", 
+write.csv(adipose_tissue_phenoData, file = paste(wdir, "/Datasets/adipose_tissue_phenoData_suppl.csv", sep=""), 
           row.names = FALSE)
 
 ## Assay data
@@ -141,7 +140,8 @@ rownames(adipose_tissue_assayData) = make.names(adipose_tissue_gene[[1]], unique
 colnames(adipose_tissue_assayData) =  paste(adipose_tissue_phenoData$fid, adipose_tissue_phenoData$pid, sep=".")
 
 
-write.csv(adipose_tissue_assayData, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_assayData_suppl.csv", row.names = TRUE)
+write.csv(adipose_tissue_assayData, file = paste(wdir, "/Datasets/adipose_tissue_assayData_suppl.csv", sep=""), 
+          row.names = TRUE)
 
 
 ### Try to get the annotation data
@@ -163,20 +163,19 @@ annotations <- annotations[match(rownames(adipose_tissue_assayData), annotations
 
 
 ### Get the additional information for each individual
-
-
 adipose_tissue_featureData = data.frame(geneId = as.factor(adipose_tissue_gene[[1]]), 
                                         geneDesc = as.factor(adipose_tissue_gene[[2]]))
 
-write.csv(annotations, file = "~/Desktop/MiCM/affy_pipeline/Data/adipose_tissue_featureData.csv", row.names = FALSE)
+write.csv(annotations, file = paste(wdir, "/Datasets/adipose_tissue_featureData.csv", sep=""), 
+          row.names = FALSE)
 
 ```
 
 ```{r}
-assayData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_assayData.csv', row.names=1)
+assayData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_assayData.csv", sep=""), row.names=1)
 assayData <- as.matrix(assayData)
 
-adipose_tissue_phenoData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_phenoData.csv')
+adipose_tissue_phenoData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_phenoData.csv", sep=""))
 rownames(adipose_tissue_phenoData) = colnames(assayData)
 
 metadata <- data.frame(labelDescription=
@@ -186,7 +185,7 @@ metadata <- data.frame(labelDescription=
                        row.names=c("fid", "pid", "group"))
 
 phenoData <- new("AnnotatedDataFrame", data=adipose_tissue_phenoData, varMetadata=metadata)
-adipose_tissue_featureData <- read.csv('~/Dropbox/MiCM summer project_Matrisome_Anny Hang_Kaartinen lab/R files/csv files/adipose_tissue_featureData.csv')
+adipose_tissue_featureData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_featureData.csv", sep=""))
 rownames(adipose_tissue_featureData) = rownames(assayData)
 featureData <- new("AnnotatedDataFrame", data=adipose_tissue_featureData)
 
@@ -336,5 +335,3 @@ adjPval_cutoff <- max(signif_toptable$adj.P.Val)
 ### ----------------------------------------------------------------------------
 
 ```
-
-# 
