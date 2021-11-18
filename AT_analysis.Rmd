@@ -182,7 +182,7 @@ hist(rowMedians(Biobase::exprs(palmieri_manfiltered)), 100, col = "cornsilk", fr
 ```
 
 # Hypothesis Testing
-Regression analysis was performed, and hypothesis testing followed.
+Regression analysis was performed, and hypothesis testing followed. 
 
 ### Design Matrix
 ```{r}
@@ -198,7 +198,8 @@ rownames(design_palmieri) <- Biobase::pData(palmieri_manfiltered)$pid
 contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design_palmieri)
 ```
 
-### Removing Heteroscedasticity
+### Model Fit
+*voom* function adjusts the data for heteroscedasticity and prepares the data for linear fit. The design and contrast matrices were fit in a linear model using the corresponding function from the limma package. Empirical Bayes method was used to make more precise estimates of gene-wise variability and to get moderated results.
 ```{r}
 par(mfrow=c(1,2))
 
