@@ -3,8 +3,8 @@ title: "Statistical Analysis for: Matrisome alterations in obesity - Adipose tis
 output: html_notebook
 ---
 
-
-```{r results='hide', echo=FALSE}
+### Library Used
+```{r results='hide', eval=FALSE}
 #General Bioconductor packages
 library(Biobase)
 library(oligoClasses)
@@ -151,7 +151,7 @@ oligo::boxplot(palmieri_eset_norm, target = "core",
                main = "AT: Boxplot of log2-intensitites for the normalized data")
 ```
 ### Filtering
-The data was filtered using a threshold value of 3. Transcripts that do not have intensities larger than the threshold in at least as many arrays as the smallest experimental group are excluded.
+The data was filtered using a threshold value of 3. Transcripts that do not have intensities larger than the threshold in at least as many arrays as the smallest experimental group were excluded.
 ```{r}
 par(mfrow=c(2,1))
 
@@ -199,7 +199,7 @@ contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design_palmier
 ```
 
 ### Model Fit
-*voom* function adjusts the data for heteroscedasticity and prepares the data for linear fit. The design and contrast matrices were fit in a linear model using the corresponding function from the limma package. Empirical Bayes method was used to make more precise estimates of gene-wise variability and to get moderated results.
+*voom* function adjusts the data for heteroscedasticity and prepares the data for linear fit. The design and contrast matrices were fit in a linear model using the corresponding function from the limma library. Empirical Bayes method was used to make more precise estimates of gene-wise variability and to get moderated results.
 ```{r}
 par(mfrow=c(1,2))
 
@@ -212,18 +212,19 @@ plotSA(efit, main="AT: Final model: Mean-variance trend")
 ```
 
 # Results
-Significance of the differential expression of of the genes were determined using the function topTable from the limma library. 
+Significance of the differential expression of each genes was extracted using the function topTable on the linear model fit. The adjusted p-value is derived from the Benjamini-Hochberg Procedure, which decreases the false discovery rate.
 ```{r}
 table_adipose <- topTable(efit, number = Inf, sort.by = "p")
 head(table_adipose)
 
-summary(decideTests(efit))
 dt <- decideTests(efit)
+summary(dt)
 
-hist(table_adipose$P.Value, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
+hist(table_adipose$adj.P.Val, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
 ```
 
 ### Finding P-values
+The significance of each genes was determined through statistical analysis, so the p-value
 ```{r}
 signif_genes <- rownames(as.matrix(dt[dt != 0,]))
 signif_toptable <- table_adipose[rownames(table_adipose) %in% signif_genes,]
