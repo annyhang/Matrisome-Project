@@ -189,13 +189,13 @@ Regression analysis was performed, and hypothesis testing followed.
 fam <- as.character(Biobase::pData(palmieri_manfiltered)$fid)
 group <- Biobase::pData(palmieri_manfiltered)$group
 
-design_palmieri <- model.matrix(~ 0 + group + fam)
-rownames(design_palmieri) <- Biobase::pData(palmieri_manfiltered)$pid
+design <- model.matrix(~ 0 + group + fam)
+rownames(design) <- Biobase::pData(palmieri_manfiltered)$pid
 ```
 
 ### Contrast Matrix
 ```{r}
-contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design_palmieri)
+contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design)
 ```
 
 ### Model Fit
@@ -203,11 +203,13 @@ contrast_matrix <- makeContrasts(groupheavy - grouplean, levels = design_palmier
 ```{r}
 par(mfrow=c(1,2))
 
-v <- voom(palmieri_manfiltered, design_palmieri, plot=TRUE)
+v <- voom(palmieri_manfiltered, design, plot=TRUE)
 
-vfit <- lmFit(v, design_palmieri)
-vfit <- contrasts.fit(vfit, contrasts=contrast_matrix)
-efit <- eBayes(vfit)
+dupfit <- duplicateCorrelation(v, design, block=fam)
+vfit <- lmFit(v, design, correlation=dupfit$consensus, block = fam)
+
+contrastfit <- contrasts.fit(vfit, contrasts=contrast_matrix)
+efit <- eBayes(contrastfit)
 plotSA(efit, main="AT: Final model: Mean-variance trend")
 ```
 
