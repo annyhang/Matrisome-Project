@@ -1,5 +1,5 @@
 ---
-title: "Statistical Analysis for: Matrisome alterations in obesity - Adipose tissue transcriptome study on monozygotic  weight-discordant twins"
+title: "Statistical Analysis with Sex as a Factor for: Matrisome alterations in obesity - Adipose tissue transcriptome study on monozygotic  weight-discordant twins"
 output: html_notebook
 ---
 
@@ -20,6 +20,7 @@ library(arrayQualityMetrics)
 
 #Analysis and statistics packages
 library(limma)
+library(statmod)
 
 #Plotting and color options packages
 library(gplots)
@@ -36,34 +37,72 @@ library(readxl, writexl)
 ```
 
 # Data Preparation
-In order to follow the pipeline for the analysis, the genomic data must be formatted to fit into an ExpressionSet class from Bioconductor. The class includes and assay data, a feature data, and a phenotypic meta-data. Assay data and phenotype data come from the Finnish project while the feature data is generated with the biomaRT library.
-```{r results='hide'}
+In order to follow the pipeline for the analysis, the genomic data must be formatted to fit into an ExpressionSet class from Bioconductor. The class includes and assay data, a feature data, and a phenotypic meta-data. Assay data and phenotype data come from the Finnish project while the feature data is generated with the biomaRT library. In addition to the group lean vs heavy, other factors such as weight, bmi, height and sex was included as supplemental data for the phynotype data.
+
+There are 3 pairs of twins in the adipose tissue data whose supplemental information was not provided. For the sake of analysis including the supplemental data i.e. sex, the three families were removed from the data analysis.
+```{r results='hide', eval=FALSE}
 wdir <- dirname(rstudioapi::getSourceEditorContext()$path)
 
 ### Load adipose tissue gene
-adipose_tissue_gene <- read_excel(paste(wdir, "/Datasets/MZtwins_whole genome_adipocyte_adipose tissue.xlsx", sep = ""), 
+adipose_tissue_gene_full <- read_excel(paste(wdir, "/Datasets/MZtwins_whole genome_adipocyte_adipose tissue.xlsx", sep = ""), 
                                   sheet = "Adipose Tissue", skip = 4, col_names = FALSE)
+
+## Remove the 3 pairs of twins without supplemental data
+adipose_tissue_gene <- adipose_tissue_gene_full[-c(6,8,14,31,33,39)]
+
+### Load supplemental data about each individual
+adipose_tissue_supplementalData_lean <- read_excel(paste(wdir, "/Datasets/Supplementary Table 1_Twin characteristics_adipocity_July 15_2020.xlsx", sep = ""),
+                                                   sheet = "22 Twins", range = "C4:F25", col_names = FALSE)
+adipose_tissue_supplementalData_heavy <- read_excel(paste(wdir, "/Datasets/Supplementary Table 1_Twin characteristics_adipocity_July 15_2020.xlsx", sep = ""),
+                                                    sheet = "22 Twins", range = "C32:F53", 
+                                                    col_names = FALSE)
+
+```
+
+## Supplemental Data
+The order of the family and individual ID's correspond to the order in the genomic data.
+```{r results='hide'}
+# Family ID
+fid_wParam <- paste0('fam', c('Q','S','R','P','U','T','V','O','X','W','N','Y','J','H','E','G','C','K','M','A','B','I',
+                              'Q','S','R','P','U','T','V','O','X','W','N','Y','J','H','E','G','C','K','M','A','B','I'))
+fid_wParam <- as.factor(fid_wParam)
+
+# Individual ID
+pid_wParam <- paste0('ind', sprintf('%02d' , c(17,19,18,16,21,20,22,15,24,23,14,25,10,8,5,7,3,11,13,1,2,9,
+                                               42,44,43,41,46,45,47,40,49,48,39,50,35,33,30,32,28,36,38,26,27,34)))
+pid_wParam <- as.factor(pid_wParam)
+
+# Create the supplemental data
+adipose_tissue_supplementalData <- data.frame(fid_wParam, pid_wParam, rbind(adipose_tissue_supplementalData_lean, adipose_tissue_supplementalData_heavy))
+
+supplemental_header <- c("sex", "height", "weight", "bmi")
+colnames(adipose_tissue_supplementalData) <- c("fid", "pid", supplemental_header)
+
+adipose_tissue_supplementalData$sex[adipose_tissue_supplementalData$sex == 1] <- "male"
+adipose_tissue_supplementalData$sex[adipose_tissue_supplementalData$sex == 2] <- "female"
+
+adipose_tissue_supplementalData <- adipose_tissue_supplementalData[with(adipose_tissue_supplementalData, order(pid)),]
 ```
 
 ## Phenotype Data
 ```{r results='hide'}
 # Family ID
-fid <- paste0('fam', c('A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y',
-                      'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y'))
+fid <- paste0('fam', c('A','B','C','E','G','H','I','J','K','M','N','O','P','Q','R','S','T','U','V','W','X','Y',
+                       'A','B','C','E','G','H','I','J','K','M','N','O','P','Q','R','S','T','U','V','W','X','Y'))
 fid <- as.factor(fid)
 
 # Individual ID
-pid <- paste0('ind', c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,
-                      27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50))
+pid <- paste0('ind', sprintf('%02d' , c(1,2,3,5,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,
+                                        26,27,28,30,32,33,34,35,36,38,39,40,41,42,43,44,45,46,47,48,49,50)))
 pid <- as.factor(pid)
 
 # Group (lean and heavy)
 group <- as.factor(rep(c('lean','heavy'), each=length(pid)/2))
 
 # Create phenotype data
-adipose_tissue_phenoData <- data.frame(fid, pid, group)
+adipose_tissue_phenoData <- data.frame(fid, pid, group, adipose_tissue_supplementalData[,-c(1,2)])
 
-write.csv(adipose_tissue_phenoData, file = paste(wdir, "/Datasets/adipose_tissue_phenoData.csv", sep=""), 
+write.csv(adipose_tissue_phenoData, file = paste(wdir, "/Datasets/adipose_tissue_phenoData_suppl.csv", sep=""), 
           row.names = FALSE)
 ```
 
@@ -75,7 +114,7 @@ adipose_tissue_assayData <- as.data.frame(adipose_tissue_gene[, -c(1, 2)])
 rownames(adipose_tissue_assayData) <- make.names(adipose_tissue_gene[[1]], unique=TRUE)
 colnames(adipose_tissue_assayData) <- paste(adipose_tissue_phenoData$fid, adipose_tissue_phenoData$pid, sep=".")
 
-write.csv(adipose_tissue_assayData, file = paste(wdir, "/Datasets/adipose_tissue_assayData.csv", sep=""), 
+write.csv(adipose_tissue_assayData, file = paste(wdir, "/Datasets/adipose_tissue_assayData_suppl.csv", sep=""), 
           row.names = TRUE)
 ```
 
@@ -102,27 +141,30 @@ annotations <- annotations[match(rownames(adipose_tissue_assayData), annotations
 adipose_tissue_featureData <- data.frame(geneId = as.factor(adipose_tissue_gene[[1]]), 
                                         geneDesc = as.factor(adipose_tissue_gene[[2]]))
 
-write.csv(annotations, file = paste(wdir, "/Datasets/adipose_tissue_featureData.csv", sep=""), 
+write.csv(annotations, file = paste(wdir, "/Datasets/adipose_tissue_featureData_suppl.csv", sep=""), 
           row.names = FALSE)
-
 ```
 
 ## Create ExpressionSet
 ```{r}
-assayData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_assayData.csv", sep=""), row.names=1)
+assayData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_assayData_suppl.csv", sep=""), row.names=1)
 assayData <- as.matrix(assayData)
 
-adipose_tissue_phenoData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_phenoData.csv", sep=""))
+adipose_tissue_phenoData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_phenoData_suppl.csv", sep=""))
 rownames(adipose_tissue_phenoData) = colnames(assayData)
 
 metadata <- data.frame(labelDescription=
                          c("Family Id",
                            "Individual Id",
-                           "Case/control status"),
-                       row.names=c("fid", "pid", "group"))
+                           "Case/control status",
+                           "1=male, 2=female",
+                           "cm",
+                           "kg",
+                           "bmi"),
+                       row.names=c("fid", "pid", "group", "sex", "height", "weight", "bmi"))
 
 phenoData <- new("AnnotatedDataFrame", data=adipose_tissue_phenoData, varMetadata=metadata)
-adipose_tissue_featureData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_featureData.csv", sep=""))
+adipose_tissue_featureData <- read.csv(paste(wdir, "/Datasets/adipose_tissue_featureData_suppl.csv", sep=""))
 rownames(adipose_tissue_featureData) = rownames(assayData)
 featureData <- new("AnnotatedDataFrame", data=adipose_tissue_featureData)
 
@@ -143,6 +185,7 @@ palmieri_eset_norm <- oligo::normalize(raw_data)
 oligo::boxplot(palmieri_eset_norm, target = "core", 
                main = "AT: Boxplot of log2-intensitites for the normalized data")
 ```
+
 ### Filtering
 The data was filtered using a threshold value of 3. Transcripts that do not have intensities larger than the threshold in at least as many arrays as the smallest experimental group were excluded.
 ```{r}
@@ -182,7 +225,7 @@ Regression analysis was performed, and hypothesis testing followed.
 fam <- as.character(Biobase::pData(palmieri_manfiltered)$fid)
 group <- Biobase::pData(palmieri_manfiltered)$group
 
-design <- model.matrix(~ 0 + group + fam)
+design <- model.matrix(~ 0 + group)
 rownames(design) <- Biobase::pData(palmieri_manfiltered)$pid
 ```
 
@@ -198,10 +241,14 @@ par(mfrow=c(1,2))
 
 v <- voom(palmieri_manfiltered, design, plot=TRUE)
 
-vfit <- lmFit(v, design)
+dupfit <- duplicateCorrelation(v, design, block = fam)
+vfit <- lmFit(v, design, correlation=dupfit$consensus, block = fam)
+cfit <- contrasts.fit(vfit, contrasts=contrast_matrix)
+efit <- eBayes(cfit)
 
 contrastfit <- contrasts.fit(vfit, contrasts=contrast_matrix)
 efit <- eBayes(contrastfit)
+
 plotSA(efit, main="AT: Final model: Mean-variance trend")
 ```
 
@@ -215,23 +262,4 @@ dt <- decideTests(efit)
 summary(dt)
 
 hist(table_adipose$adj.P.Val, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
-```
-
-### Finding P-values
-The significance of each genes was determined through statistical analysis, so the p-value
-```{r}
-signif_genes <- rownames(as.matrix(dt[dt != 0,]))
-signif_toptable <- table_adipose[rownames(table_adipose) %in% signif_genes,]
-
-## P-value
-pval_min <- min(table_adipose$P.Value)
-pval_max <- max(table_adipose$P.Value)
-
-pval_cutoff <- max(signif_toptable$P.Value)
-
-## Adjusted P-value
-adjPval_min <- min(table_adipose$adj.P.Val)
-adjPval_max <- max(table_adipose$adj.P.Val)
-
-adjPval_cutoff <- max(signif_toptable$adj.P.Val)
 ```
