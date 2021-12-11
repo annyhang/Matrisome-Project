@@ -224,6 +224,10 @@ Regression analysis was performed, and hypothesis testing followed.
 ```{r}
 fam <- as.character(Biobase::pData(palmieri_manfiltered)$fid)
 group <- Biobase::pData(palmieri_manfiltered)$group
+sex<- Biobase::pData(palmieri_manfiltered)$sex
+height <- Biobase::pData(palmieri_manfiltered)$height
+weight <- Biobase::pData(palmieri_manfiltered)$weight
+bmi <- Biobase::pData(palmieri_manfiltered)$bmi
 
 design <- model.matrix(~ 0 + group)
 rownames(design) <- Biobase::pData(palmieri_manfiltered)$pid
@@ -256,10 +260,86 @@ plotSA(efit, main="AT: Final model: Mean-variance trend")
 Significance of the differential expression of each genes was extracted using the function topTable on the linear model fit. The adjusted p-value is derived from the Benjamini-Hochberg Procedure, which decreases the false discovery rate.
 ```{r}
 table_adipose <- topTable(efit, number = Inf, sort.by = "p")
-head(table_adipose)
 
 dt <- decideTests(efit)
 summary(dt)
 
 hist(table_adipose$adj.P.Val, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
 ```
+
+## Additional Tests
+Additional tests were performed to show the effect of the parameters on the data. This includes a combination of the parameters as factors in the design matrix.
+
+# Interaction effect of sex
+```{r}
+interVar <- paste(sex, group, sep=".")
+interVar <- factor(interVar, levels=c("male.lean","male.heavy","female.lean","female.heavy"))
+
+design1 <- model.matrix(~0 + interVar)
+rownames(design1) <- Biobase::pData(palmieri_manfiltered)$pid 
+
+contrast_matrix1 <- makeContrasts(
+  HeavyLeanInMale=interVarmale.heavy - interVarmale.lean,
+  HeavyLeanInFem=interVarfemale.heavy - interVarfemale.lean,
+  Diff=(interVarmale.heavy-interVarmale.lean) - (interVarfemale.heavy-interVarfemale.lean),
+  levels=design1)
+v1 <- voom(palmieri_manfiltered, design1, plot = FALSE)
+
+dupfit1 <- duplicateCorrelation(v1, design1, block=fam)
+vfit1 <- lmFit(v1, design1, correlation=dupfit1$consensus, block = fam)
+cfit1 <- contrasts.fit(vfit1, contrast_matrix1)
+efit1 <- eBayes(fit1)
+
+plotSA(efit1, main="AT: Final model: Mean-variance trend")
+
+dt1 <- decideTests(efit1, method = "global")
+summary(dt1)
+
+vennDiagram(dt1)
+```
+# Sex as a factor
+```{r}
+par(mfrow=c(1,2))
+
+design2 <- model.matrix(~0 + group + sex)
+rownames(design2) <- Biobase::pData(palmieri_manfiltered)$pid 
+
+contrast_matrix2 <- makeContrasts(groupheavy - grouplean, levels = design2)
+
+v2 <- voom(palmieri_manfiltered, design2, plot=TRUE)
+
+dupfit2 <- duplicateCorrelation(v2, design2, block=fam)
+vfit2 <- lmFit(v2, design2, correlation=dupfit2$consensus, block = fam)
+cfit2 <- contrasts.fit(vfit2, contrasts=contrast_matrix2)
+efit2 <- eBayes(cfit2)
+
+plotSA(efit2, main="AT: Final model: Mean-variance trend")
+
+dt2 <- decideTests(efit2, method = "global")
+summary(dt2)
+```
+
+# Group + fam as a factor
+```{r}
+par(mfrow=c(1,2))
+
+design3 <- model.matrix(~ 0 + group + fam)
+rownames(design3) <- Biobase::pData(palmieri_manfiltered)$pid
+
+contrast_matrix3 <- makeContrasts(groupheavy - grouplean, levels = design3)
+
+v3 <- voom(palmieri_manfiltered, design3, plot=TRUE)
+
+vfit3 <- lmFit(v3, design3)
+cfit3 <- contrasts.fit(vfit3, contrasts=contrast_matrix3)
+efit3 <- eBayes(cfit3)
+
+plotSA(efit3, main="AT: Final model: Mean-variance trend")
+
+table_adipose3 <- topTable(efit3, number = Inf, sort.by = "p")
+
+dt3 <- decideTests(efit3)
+summary(dt3)
+```
+
+
