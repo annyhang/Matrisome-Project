@@ -266,8 +266,129 @@ summary(dt)
 
 hist(table_adipose$adj.P.Val, main = "AT: Heavy vs Lean P-values intensities", xlab = "p-values")
 ```
+Significance of differential gene expressions was determined based on the p-values calculated by the Benjamini-Hochberg procedure.
+```{r}
+signif_genes <- rownames(as.matrix(dt[dt != 0,]))
+signif_toptable <- table_adipose[rownames(table_adipose) %in% signif_genes,]
 
-## Additional Tests
+adjPval_min <- min(table_adipose$adj.P.Val)
+adjPval_max <- max(table_adipose$adj.P.Val)
+
+adjPval_cutoff <- max(signif_toptable$adj.P.Val)
+```
+
+# Matrisome Analysis
+The data analysis was performed on the entire genomic dataset. The results were then filtered for the matrisome genes only. Matrisome genes were taken from the Matrisome Project database.
+```{r}
+matrisome_masterlist <- read_excel(paste(wdir, "/Public Datasets/matrisome_hs_masterlist.xls", sep = ""))
+
+ECM_glycoproteins <- matrisome_masterlist[matrisome_masterlist$Category == "ECM Glycoproteins",]
+collagens <- matrisome_masterlist[matrisome_masterlist$Category == "Collagens",]
+proteoglycans <- matrisome_masterlist[matrisome_masterlist$Category == "Proteoglycans",]
+ECM_affiliated_proteins <- matrisome_masterlist[matrisome_masterlist$Category == "ECM-affiliated Proteins",]
+ECM_regulators <- matrisome_masterlist[matrisome_masterlist$Category == "ECM Regulators",]
+secreted_factors <- matrisome_masterlist[matrisome_masterlist$Category == "Secreted Factors",]
+```
+
+### Significant Matrisome Genes
+```{r}
+matrisome_toptable <- table_adipose[rownames(table_adipose) %in% matrisome_masterlist$`Gene Symbol`,]
+
+matrisome_toptable$`Differential Expression` <- "Not Sig."
+matrisome_toptable$`Differential Expression`[matrisome_toptable$logFC < 0 & -log10(matrisome_toptable$adj.P.Val) > -log10(adjPval_cutoff)] <- "Matrisome Down"
+matrisome_toptable$`Differential Expression`[matrisome_toptable$logFC > 0 & -log10(matrisome_toptable$adj.P.Val) > -log10(adjPval_cutoff)] <- "Matrisome Up"
+matrisome_toptable$label <- NA
+matrisome_toptable$label[matrisome_toptable$`Differential Expression` %in% c("Matrisome Down", "Matrisome Up")] <- rownames(matrisome_toptable[matrisome_toptable$`Differential Expression` %in% c("Matrisome Down", "Matrisome Up"),])
+
+matr_signif_genes <- signif_genes[signif_genes %in% matrisome_masterlist$`Gene Symbol`]
+
+matrisome_dt <- as.matrix(dt[rownames(dt) %in% matrisome_masterlist$`Gene Symbol`,])
+dt_genes <- rownames(matrisome_dt)
+summary(matrisome_dt)
+```
+
+# Plots
+```{r}
+table_adipose$`Differential Expression` <- "Not Sig."
+table_adipose$`Differential Expression`[table_adipose$logFC < 0 & -log10(table_adipose$adj.P.Val) > -log10(adjPval_cutoff)] <- "Transcriptome Down"
+table_adipose$`Differential Expression`[table_adipose$logFC > 0 & -log10(table_adipose$adj.P.Val) > -log10(adjPval_cutoff)] <- "Transcriptome Up"
+table_adipose$`Differential Expression`[table_adipose$`Differential Expression` == "Transcriptome Down" & 
+                                          table_adipose$ensembl_gene_id %in% downregulated_matr_table$ensembl_gene_id] <- "Matrisome Down"
+table_adipose$`Differential Expression`[table_adipose$`Differential Expression` == "Transcriptome Up" & 
+                                          table_adipose$ensembl_gene_id %in% upregulated_matr_table$ensembl_gene_id] <- "Matrisome Up"
+
+matrisome_toptable$`Differential Expression` <- "Not Sig."
+matrisome_toptable$`Differential Expression`[matrisome_toptable$logFC < 0 & -log10(matrisome_toptable$adj.P.Val) > -log10(adjPval_cutoff)] <- "Matrisome Down"
+matrisome_toptable$`Differential Expression`[matrisome_toptable$logFC > 0 & -log10(matrisome_toptable$adj.P.Val) > -log10(adjPval_cutoff)] <- "Matrisome Up"
+
+# Label the significant matrisome genes only
+table_adipose$label <- NA
+table_adipose$label[table_adipose$`Differential Expression` %in% c("Matrisome Down", "Matrisome Up")] <- rownames(table_adipose[table_adipose$`Differential Expression` %in% c("Matrisome Up", "Matrisome Down"),])
+
+```
+
+##Volcano Plots
+### Transcriptome data
+```{r}
+volccol <- c("grey60", "grey60", "blue", "darkorange",  "grey87")
+names(volccol) <- c("Transcriptome Down", "Transcriptome Up", "Matrisome Down", "Matrisome Up", "Not Sig.")
+
+ggplot(data = table_adipose, aes(x=logFC, y=-log10(adj.P.Val), label=label, col=`Differential Expression`)) + 
+  scale_x_continuous(labels = c(-0.50, -0.25, 0, 0.25, 0.50)) +
+  scale_y_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6), labels = c(0, 1, 2, 3, 4, 5, 6), limits = c(0, 6)) +
+  geom_point(size=3) + 
+  geom_point(size=3, data=subset(table_adipose, `Differential Expression` %in% c("Matrisome Down", "Matrisome Up"))) +
+  geom_vline(xintercept=c(0, 0), col="black", linetype="dashed", size = 0.75) +
+  geom_hline(yintercept=c(-log10(adjPval_cutoff)), col="black", linetype="dashed", size = 0.75) +
+  scale_colour_manual(values = volccol) + 
+  # geom_text(nudge_y = -0.15, check_overlap = TRUE, colour = "black") +
+  # geom_text_repel(nudge_y = -0.1) +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.75),
+        axis.title = element_blank(),
+        axis.text = element_text(size = 20, family = 'Helvetica'),
+        # legend.key = element_rect(fill = "white"),
+        # legend.title = element_blank(),
+        legend.position = "none", 
+        plot.margin = unit(c(1, 1, 1, 1), "cm"))
+```
+### Matrisome Data
+```{r}
+ggplot(data = matrisome_toptable, aes(x=logFC, y=-log10(adj.P.Val), label=label, col=`Differential Expression`)) + 
+  scale_x_continuous(labels = c(-0.50, -0.25, 0, 0.25, 0.50)) + 
+  scale_y_continuous(breaks = c(0, 1, 2, 3, 4, 5), labels = c(0, 1, 2, 3, 4, 5), limits = c(0, 5)) +
+  geom_point(size=3) + 
+  geom_vline(xintercept=c(0, 0), col="black", linetype="dashed", size=0.75) +
+  geom_hline(yintercept=c(-log10(adjPval_cutoff)), col="black", linetype="dashed", size=0.75) +
+  scale_colour_manual(values = volccol) + 
+  # geom_text(colour = "black", size = 4, position = position_nudge(y = 0.1), check_overlap = TRUE) +
+  geom_text_repel(colour = "black", size = 4, box.padding = 0.25) +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black", size = 0.75),
+        axis.title = element_blank(),
+        axis.text = element_text(size = 20, family = 'Helvetica'),
+        # legend.text = element_text(family = "Helvetica", size = 12),
+        # legend.key = element_blank(),
+        # legend.title = element_blank(),
+        # legend.position = c(0.15,0.93),
+        legend.position = "none",
+        plot.margin = unit(c(1, 1, 1, 1), "cm"))
+```
+
+
+
+
+### Additional Tests
 Additional tests were performed to show the effect of the parameters on the data. This includes a combination of the parameters as factors in the design matrix.
 
 # Interaction effect of sex
